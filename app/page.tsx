@@ -14,11 +14,12 @@ import {
   FiSmile,
   FiStar,
   FiTarget,
+  FiType,
 } from "react-icons/fi";
 import Image from "next/image";
 import { get as idbGet, set as idbSet } from "idb-keyval";
 
-type BoardItemKind = "goal" | "win" | "focus" | "northstar" | "image" | "stamp";
+type BoardItemKind = "goal" | "win" | "focus" | "northstar" | "image" | "stamp" | "text";
 
 type BoardItem = {
   id: string;
@@ -26,6 +27,10 @@ type BoardItem = {
   text: string;
   imageSrc?: string;
   imageRatio?: number;
+  textColor?: string;
+  textSize?: number;
+  textBold?: boolean;
+  textItalic?: boolean;
   x: number;
   y: number;
   width: number;
@@ -45,6 +50,8 @@ const CANVAS_WIDTH = 2800;
 const CANVAS_HEIGHT = 1800;
 let idCounter = 1;
 const STAMP_SET = ["💖", "👍", "⭐", "🔥", "👀", "✅", "🎯", "🚀", "💡", "🎉", "💰", "❓"];
+const TEXT_COLORS = ["#0f172a", "#2563eb", "#dc2626", "#16a34a", "#7c3aed"];
+const TEXT_SIZES = [20, 28, 36, 48];
 
 function storageKey(year: number) {
   return `vision-board-${year}`;
@@ -86,6 +93,10 @@ function loadBoard(year: number): BoardData {
             width: typeof item.width === "number" ? item.width : 220,
             height: typeof item.height === "number" ? item.height : 220,
             imageRatio: typeof item.imageRatio === "number" ? item.imageRatio : undefined,
+            textColor: typeof item.textColor === "string" ? item.textColor : "#0f172a",
+            textSize: typeof item.textSize === "number" ? item.textSize : 32,
+            textBold: Boolean(item.textBold),
+            textItalic: Boolean(item.textItalic),
           }))
         : defaultBoard(year).items,
     };
@@ -104,6 +115,10 @@ function normalizeBoard(data: BoardData, year: number): BoardData {
           width: typeof item.width === "number" ? item.width : 220,
           height: typeof item.height === "number" ? item.height : 220,
           imageRatio: typeof item.imageRatio === "number" ? item.imageRatio : undefined,
+          textColor: typeof item.textColor === "string" ? item.textColor : "#0f172a",
+          textSize: typeof item.textSize === "number" ? item.textSize : 32,
+          textBold: Boolean(item.textBold),
+          textItalic: Boolean(item.textItalic),
         }))
       : defaultBoard(year).items,
   };
@@ -111,7 +126,7 @@ function normalizeBoard(data: BoardData, year: number): BoardData {
 
 function noteStyle(kind: BoardItemKind) {
   if (kind === "northstar") return "bg-amber-100 border-amber-300";
-  if (kind === "image" || kind === "stamp") return "";
+  if (kind === "image" || kind === "stamp" || kind === "text") return "";
   return "bg-sky-100 border-sky-200";
 }
 
@@ -126,6 +141,7 @@ function kindLabel(kind: BoardItemKind) {
   if (kind === "northstar") return "north star";
   if (kind === "image") return "image";
   if (kind === "stamp") return "stamp";
+  if (kind === "text") return "text";
   return "focus";
 }
 
@@ -136,6 +152,7 @@ export default function Home() {
   const [saveStatus, setSaveStatus] = useState<"unsaved" | "saving" | "saved" | "error">("saved");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+  const [activeTool, setActiveTool] = useState<"select" | "text">("select");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [isDragOverBoard, setIsDragOverBoard] = useState(false);
@@ -149,6 +166,7 @@ export default function Home() {
 
   const boardAreaRef = useRef<HTMLElement | null>(null);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
+  const textDraftIdRef = useRef<string | null>(null);
   const boardRef = useRef<BoardData>(board);
   const selectedIdsRef = useRef<string[]>(selectedIds);
   const historyRef = useRef<BoardData[]>([]);
@@ -185,6 +203,10 @@ export default function Home() {
     const pct = goals === 0 ? 0 : Math.min(100, Math.round((wins / goals) * 100));
     return { goals, wins, pct, hasNorthStar };
   }, [board.items]);
+  const focusedTextItem = useMemo(
+    () => board.items.find((item) => item.id === editingTextId && item.kind === "text") ?? null,
+    [board.items, editingTextId],
+  );
 
   useEffect(() => {
     boardRef.current = board;
@@ -320,6 +342,28 @@ export default function Home() {
     };
     saveBoard(next);
     setSelectedIds([next.items[next.items.length - 1].id]);
+  };
+
+  const addTextAt = (x: number, y: number) => {
+    const nextItem: BoardItem = {
+      id: nextId("text"),
+      kind: "text",
+      text: "new text",
+      textColor: "#0f172a",
+      textSize: 32,
+      textBold: false,
+      textItalic: false,
+      x: Math.max(0, Math.min(x, CANVAS_WIDTH - 260)),
+      y: Math.max(0, Math.min(y, CANVAS_HEIGHT - 80)),
+      width: 260,
+      height: 80,
+      tilt: 0,
+    };
+    const next = { ...boardRef.current, items: [...boardRef.current.items, nextItem] };
+    saveBoard(next);
+    setSelectedIds([nextItem.id]);
+    setEditingTextId(nextItem.id);
+    textDraftIdRef.current = nextItem.id;
   };
 
   const addStamp = (value: string) => {
@@ -500,6 +544,17 @@ export default function Home() {
     saveBoard(next);
   };
 
+  const updateTextStyle = (
+    id: string,
+    patch: Partial<Pick<BoardItem, "textColor" | "textSize" | "textBold" | "textItalic">>,
+  ) => {
+    const next = {
+      ...boardRef.current,
+      items: boardRef.current.items.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+    };
+    saveBoard(next);
+  };
+
   const autoFitCardHeight = (id: string, contentEl: HTMLDivElement) => {
     const overflow = contentEl.scrollHeight - contentEl.clientHeight;
     if (overflow <= 2) return;
@@ -581,6 +636,13 @@ export default function Home() {
     const areaRect = boardAreaRef.current.getBoundingClientRect();
     const x = Math.min(areaRect.width, Math.max(0, event.clientX - areaRect.left));
     const y = Math.min(areaRect.height, Math.max(0, event.clientY - areaRect.top));
+
+    if (activeTool === "text") {
+      addTextAt(x, y);
+      return;
+    }
+
+    setEditingTextId(null);
     const additive = event.shiftKey || event.ctrlKey || event.metaKey;
     const baseSelected = additive ? selectedIdsRef.current : [];
 
@@ -641,6 +703,15 @@ export default function Home() {
                         imageRatio: ratio,
                       };
                     })()
+                  : item.kind === "text"
+                    ? (() => {
+                        const minWidth = 80;
+                        const minHeight = Math.max(40, Math.round((item.textSize ?? 32) * 1.25 + 14));
+                        return {
+                          width: Math.min(900, Math.max(minWidth, active.startW + dx)),
+                          height: Math.min(420, Math.max(minHeight, active.startH + dy)),
+                        };
+                      })()
                   : {
                       width: Math.min(520, Math.max(160, active.startW + dx)),
                       height: Math.min(520, Math.max(160, active.startH + dy)),
@@ -957,6 +1028,24 @@ export default function Home() {
     return () => window.clearTimeout(timeout);
   }, [isEditingTitle]);
 
+  useEffect(() => {
+    if (!textDraftIdRef.current) return;
+    const id = textDraftIdRef.current;
+    const timeout = window.setTimeout(() => {
+      const node = document.querySelector(`[data-text-id="${id}"]`) as HTMLDivElement | null;
+      if (!node) return;
+      node.focus();
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      range.collapse(false);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      textDraftIdRef.current = null;
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [board.items, editingTextId]);
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-slate-100 font-[family-name:var(--font-space-grotesk)] text-slate-800">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle,_rgba(15,23,42,0.16)_1px,transparent_1px)] bg-[size:16px_16px]" />
@@ -1049,8 +1138,68 @@ export default function Home() {
           onDropCapture={handleBoardDrop}
           className={`relative mt-4 h-[calc(100vh-175px)] w-full overflow-hidden rounded-2xl border bg-white/25 backdrop-blur-[2px] ${
             isDragOverBoard ? "border-sky-400/80 shadow-[0_0_0_2px_rgba(56,189,248,0.25)]" : "border-slate-200/70"
-          }`}
+          } ${activeTool === "text" ? "cursor-text" : ""}`}
         >
+          {focusedTextItem && (
+            <div
+              onPointerDown={(event) => event.stopPropagation()}
+              className="absolute z-40 flex items-center gap-1 rounded-xl border border-slate-700 bg-slate-900/95 px-2 py-1 text-white shadow-lg"
+              style={{ left: Math.max(12, focusedTextItem.x), top: Math.max(8, focusedTextItem.y - 44) }}
+            >
+              <div className="flex items-center gap-1 pr-1">
+                {TEXT_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => updateTextStyle(focusedTextItem.id, { textColor: color })}
+                    className={`h-5 w-5 rounded-full border ${
+                      focusedTextItem.textColor === color ? "border-white" : "border-slate-300/40"
+                    }`}
+                    style={{ backgroundColor: color }}
+                    aria-label={`set text color ${color}`}
+                  />
+                ))}
+              </div>
+              <div className="mx-1 h-5 w-px bg-white/25" />
+              {TEXT_SIZES.map((size) => (
+                <button
+                  key={size}
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => updateTextStyle(focusedTextItem.id, { textSize: size })}
+                  className={`rounded px-1.5 py-0.5 text-xs ${
+                    focusedTextItem.textSize === size ? "bg-white/20" : "hover:bg-white/10"
+                  }`}
+                >
+                  {size}
+                </button>
+              ))}
+              <div className="mx-1 h-5 w-px bg-white/25" />
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => updateTextStyle(focusedTextItem.id, { textBold: !focusedTextItem.textBold })}
+                className={`rounded px-2 py-0.5 text-sm font-bold ${
+                  focusedTextItem.textBold ? "bg-white/20" : "hover:bg-white/10"
+                }`}
+                aria-label="toggle bold"
+              >
+                B
+              </button>
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => updateTextStyle(focusedTextItem.id, { textItalic: !focusedTextItem.textItalic })}
+                className={`rounded px-2 py-0.5 text-sm italic ${
+                  focusedTextItem.textItalic ? "bg-white/20" : "hover:bg-white/10"
+                }`}
+                aria-label="toggle italic"
+              >
+                I
+              </button>
+            </div>
+          )}
           {board.items.length === 0 ? (
             <div className="grid h-full place-items-center text-slate-500">
               <p>start your board from the dock below.</p>
@@ -1075,13 +1224,15 @@ export default function Home() {
                   startPointerDrag(item.id, event);
                 }}
                 className={`absolute flex cursor-grab flex-col rounded-sm active:cursor-grabbing ${
-                  item.kind === "image" || item.kind === "stamp" ? "p-0" : "p-3"
-                } ${item.kind === "image" || item.kind === "stamp" ? "" : "border shadow-sm"} ${noteStyle(item.kind)} ${
+                  item.kind === "image" || item.kind === "stamp" || item.kind === "text" ? "p-0" : "p-3"
+                } ${
+                  item.kind === "image" || item.kind === "stamp" || item.kind === "text" ? "" : "border shadow-sm"
+                } ${noteStyle(item.kind)} ${
                   item.kind !== "image" && selectedIds.includes(item.id) ? "ring-2 ring-slate-500/50" : ""
                 } select-none`}
                 style={{ left: item.x, top: item.y, width: item.width, height: item.height, zIndex: idx + 1 }}
               >
-                {item.kind !== "image" && item.kind !== "stamp" && (
+                {item.kind !== "image" && item.kind !== "stamp" && item.kind !== "text" && (
                   <Chip
                     size="sm"
                     variant="flat"
@@ -1113,6 +1264,43 @@ export default function Home() {
                     style={{ fontSize: `${Math.max(32, Math.round(Math.min(item.width, item.height) * 0.52))}px` }}
                   >
                     {item.text || "⭐"}
+                  </div>
+                ) : item.kind === "text" ? (
+                  <div
+                    data-text-id={item.id}
+                    className={`h-full w-full whitespace-pre-wrap bg-transparent px-2 py-1 outline-none ${
+                      editingTextId === item.id ? "select-text" : "select-none"
+                    }`}
+                    style={{
+                      color: item.textColor ?? "#0f172a",
+                      fontSize: `${item.textSize ?? 32}px`,
+                      fontWeight: item.textBold ? 700 : 500,
+                      fontStyle: item.textItalic ? "italic" : "normal",
+                      lineHeight: 1.2,
+                    }}
+                    contentEditable={editingTextId === item.id}
+                    suppressContentEditableWarning
+                    onDoubleClick={(event) => {
+                      event.stopPropagation();
+                      setEditingTextId(item.id);
+                      const el = event.currentTarget;
+                      window.requestAnimationFrame(() => el.focus());
+                    }}
+                    onPointerDown={(event) => {
+                      if (editingTextId === item.id) {
+                        event.stopPropagation();
+                      }
+                    }}
+                    onFocus={() => {
+                      setEditingTextId(item.id);
+                      setSelectedIds([item.id]);
+                    }}
+                    onBlur={(event) => {
+                      updateCardText(item.id, event.currentTarget.textContent ?? "");
+                      if (editingTextId === item.id) setEditingTextId(null);
+                    }}
+                  >
+                    {item.text}
                   </div>
                 ) : (
                   <>
@@ -1174,19 +1362,46 @@ export default function Home() {
           <Card className="pointer-events-auto relative overflow-visible border border-slate-200/85 bg-white/95 shadow-lg">
             <CardBody className="flex flex-row items-center gap-2 overflow-visible p-2">
               <Tooltip content="add goal" delay={120}>
-                <Button size="sm" variant="flat" isIconOnly onPress={() => addCard("goal")} aria-label="add goal">
+                <Button
+                  size="sm"
+                  variant="flat"
+                  isIconOnly
+                  onPress={() => {
+                    setActiveTool("select");
+                    addCard("goal");
+                  }}
+                  aria-label="add goal"
+                >
                   <span className="sr-only">add goal</span>
                   <FiTarget className="text-sm" />
                 </Button>
               </Tooltip>
               <Tooltip content="add win" delay={120}>
-                <Button size="sm" variant="flat" isIconOnly onPress={() => addCard("win")} aria-label="add win">
+                <Button
+                  size="sm"
+                  variant="flat"
+                  isIconOnly
+                  onPress={() => {
+                    setActiveTool("select");
+                    addCard("win");
+                  }}
+                  aria-label="add win"
+                >
                   <span className="sr-only">add win</span>
                   <FiAward className="text-sm" />
                 </Button>
               </Tooltip>
               <Tooltip content="add focus" delay={120}>
-                <Button size="sm" variant="flat" isIconOnly onPress={() => addCard("focus")} aria-label="add focus">
+                <Button
+                  size="sm"
+                  variant="flat"
+                  isIconOnly
+                  onPress={() => {
+                    setActiveTool("select");
+                    addCard("focus");
+                  }}
+                  aria-label="add focus"
+                >
                   <span className="sr-only">add focus</span>
                   <FiEye className="text-sm" />
                 </Button>
@@ -1196,12 +1411,30 @@ export default function Home() {
                   size="sm"
                   variant="flat"
                   isIconOnly
-                  onPress={() => addCard("northstar")}
+                  onPress={() => {
+                    setActiveTool("select");
+                    addCard("northstar");
+                  }}
                   isDisabled={stats.hasNorthStar}
                   aria-label="add north star"
                 >
                   <span className="sr-only">add north star</span>
                   <FiStar className="text-sm" />
+                </Button>
+              </Tooltip>
+              <Tooltip content="text tool" delay={120}>
+                <Button
+                  size="sm"
+                  variant={activeTool === "text" ? "solid" : "flat"}
+                  color={activeTool === "text" ? "secondary" : "default"}
+                  isIconOnly
+                  onPress={() => {
+                    setIsStampPickerOpen(false);
+                    setActiveTool((prev) => (prev === "text" ? "select" : "text"));
+                  }}
+                  aria-label="text tool"
+                >
+                  <FiType className="text-sm" />
                 </Button>
               </Tooltip>
               <Tooltip content="add stamp" delay={120}>
@@ -1210,7 +1443,10 @@ export default function Home() {
                   variant={isStampPickerOpen ? "solid" : "flat"}
                   color={isStampPickerOpen ? "secondary" : "default"}
                   isIconOnly
-                  onPress={() => setIsStampPickerOpen((prev) => !prev)}
+                  onPress={() => {
+                    setActiveTool("select");
+                    setIsStampPickerOpen((prev) => !prev);
+                  }}
                   aria-label="open stamp picker"
                 >
                   <FiSmile className="text-sm" />
