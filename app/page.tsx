@@ -40,6 +40,7 @@ type BoardItem = {
 
 type BoardData = {
   title: string;
+  ownerName: string;
   isPublic: boolean;
   credits: number;
   items: BoardItem[];
@@ -60,6 +61,7 @@ function storageKey(year: number) {
 function defaultBoard(year: number): BoardData {
   return {
     title: `${year} annual vision board`,
+    ownerName: "Mohamed Reda",
     isPublic: false,
     credits: 50,
     items: [
@@ -126,6 +128,8 @@ function normalizeBoard(data: BoardData, year: number): BoardData {
 
 function noteStyle(kind: BoardItemKind) {
   if (kind === "northstar") return "bg-amber-100 border-amber-300";
+  if (kind === "goal") return "bg-rose-100 border-rose-300";
+  if (kind === "win") return "bg-emerald-100 border-emerald-300";
   if (kind === "image" || kind === "stamp" || kind === "text") return "";
   return "bg-sky-100 border-sky-200";
 }
@@ -151,7 +155,9 @@ export default function Home() {
   const [isHydrated, setIsHydrated] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"unsaved" | "saving" | "saved" | "error">("saved");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [isEditingOwner, setIsEditingOwner] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+  const [ownerDraft, setOwnerDraft] = useState("");
   const [activeTool, setActiveTool] = useState<"select" | "text">("select");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
@@ -166,6 +172,7 @@ export default function Home() {
 
   const boardAreaRef = useRef<HTMLElement | null>(null);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
+  const ownerInputRef = useRef<HTMLInputElement | null>(null);
   const textDraftIdRef = useRef<string | null>(null);
   const boardRef = useRef<BoardData>(board);
   const selectedIdsRef = useRef<string[]>(selectedIds);
@@ -193,8 +200,6 @@ export default function Home() {
     startPointerY: number;
     starts: Record<string, { x: number; y: number; width: number; height: number }>;
   } | null>(null);
-
-  const ownerName = "Mohamed Reda";
 
   const stats = useMemo(() => {
     const goals = board.items.filter((item) => item.kind === "goal").length;
@@ -607,6 +612,19 @@ export default function Home() {
       saveBoard({ ...boardRef.current, title: nextTitle }, selectedYear);
     }
     setIsEditingTitle(false);
+  };
+
+  const startOwnerEdit = () => {
+    setOwnerDraft(boardRef.current.ownerName);
+    setIsEditingOwner(true);
+  };
+
+  const commitOwner = () => {
+    const nextOwner = ownerDraft.trim();
+    if (nextOwner.length > 0 && nextOwner !== boardRef.current.ownerName) {
+      saveBoard({ ...boardRef.current, ownerName: nextOwner }, selectedYear);
+    }
+    setIsEditingOwner(false);
   };
 
   const reorderLayers = (mode: "front" | "back", targetId?: string) => {
@@ -1029,6 +1047,12 @@ export default function Home() {
   }, [isEditingTitle]);
 
   useEffect(() => {
+    if (!isEditingOwner) return;
+    const timeout = window.setTimeout(() => ownerInputRef.current?.focus(), 0);
+    return () => window.clearTimeout(timeout);
+  }, [isEditingOwner]);
+
+  useEffect(() => {
     if (!textDraftIdRef.current) return;
     const id = textDraftIdRef.current;
     const timeout = window.setTimeout(() => {
@@ -1052,7 +1076,7 @@ export default function Home() {
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.8)_0%,rgba(241,245,249,0.92)_100%)]" />
 
       <main className="relative z-10 mx-auto h-screen max-w-[1600px] p-3 sm:p-5">
-        <div className="flex items-start">
+        <div className="flex items-start justify-between gap-3">
           <Card className="w-fit max-w-[calc(100%-1rem)] border border-slate-200/80 bg-white/95 shadow-md">
             <CardBody className="flex flex-row items-center justify-between gap-3 p-3">
               <div className="flex items-center gap-3 overflow-hidden">
@@ -1120,6 +1144,41 @@ export default function Home() {
                   </button>
                 </Tooltip>
               </div>
+            </CardBody>
+          </Card>
+          <Card className="w-fit max-w-[42%] border border-slate-200/80 bg-white/95 shadow-md">
+            <CardBody className="p-3">
+              {isEditingOwner ? (
+                <Input
+                  ref={ownerInputRef}
+                  size="sm"
+                  value={ownerDraft}
+                  onValueChange={setOwnerDraft}
+                  onBlur={commitOwner}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      commitOwner();
+                    }
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setIsEditingOwner(false);
+                    }
+                  }}
+                  className="max-w-[260px]"
+                />
+              ) : (
+                <Tooltip content="double-click to change name" delay={120}>
+                  <button
+                    type="button"
+                    onDoubleClick={startOwnerEdit}
+                    className="truncate text-sm font-medium text-slate-700"
+                    aria-label="edit owner name"
+                  >
+                    {board.ownerName}
+                  </button>
+                </Tooltip>
+              )}
             </CardBody>
           </Card>
         </div>
@@ -1331,7 +1390,7 @@ export default function Home() {
                     >
                       {item.text}
                     </div>
-                    <p className="mt-2 select-none text-xs text-slate-500">{ownerName}</p>
+                    <p className="mt-2 select-none text-xs text-slate-500">{board.ownerName}</p>
                   </>
                 )}
                 {selectedIds.includes(item.id) && (

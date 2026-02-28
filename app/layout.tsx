@@ -42,18 +42,21 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "makesomething ☀️",
-  description: "build your first app with ai. look what i made!",
+  title: "Visora",
+  description:
+    "Visora is an interactive annual vision board app where you can drag and arrange goals, wins, focus notes, text, emojis, and images in one private creative workspace.",
   metadataBase: new URL("https://makesomething.so"),
   openGraph: {
-    title: "makesomething ☀️",
-    description: "look what i made!",
-    siteName: "makesomething",
+    title: "Visora",
+    description:
+      "Build your yearly vision board with goals, wins, focus notes, images, text, and emoji stamps in a freeform canvas.",
+    siteName: "Visora",
   },
   twitter: {
     card: "summary_large_image",
-    title: "makesomething ☀️",
-    description: "look what i made!",
+    title: "Visora",
+    description:
+      "Create and organize your annual vision board with draggable goals, wins, focus notes, images, text, and emoji stamps.",
   },
 };
 
