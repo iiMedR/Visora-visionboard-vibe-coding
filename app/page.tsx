@@ -1,16 +1,30 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card, CardBody, Chip, Input, Tooltip } from "@heroui/react";
-import { motion, PanInfo } from "framer-motion";
-import { FiAward, FiChevronsDown, FiChevronsUp, FiEye, FiTarget } from "react-icons/fi";
+import { motion } from "framer-motion";
+import {
+  FiAward,
+  FiChevronsDown,
+  FiChevronsUp,
+  FiCloud,
+  FiCloudOff,
+  FiEye,
+  FiLoader,
+  FiStar,
+  FiTarget,
+} from "react-icons/fi";
+import Image from "next/image";
+import { get as idbGet, set as idbSet } from "idb-keyval";
 
-type BoardItemKind = "goal" | "win" | "focus";
+type BoardItemKind = "goal" | "win" | "focus" | "northstar" | "image";
 
 type BoardItem = {
   id: string;
   kind: BoardItemKind;
   text: string;
+  imageSrc?: string;
+  imageRatio?: number;
   x: number;
   y: number;
   width: number;
@@ -69,6 +83,7 @@ function loadBoard(year: number): BoardData {
             ...item,
             width: typeof item.width === "number" ? item.width : 220,
             height: typeof item.height === "number" ? item.height : 220,
+            imageRatio: typeof item.imageRatio === "number" ? item.imageRatio : undefined,
           }))
         : defaultBoard(year).items,
     };
@@ -77,7 +92,24 @@ function loadBoard(year: number): BoardData {
   }
 }
 
-function noteStyle() {
+function normalizeBoard(data: BoardData, year: number): BoardData {
+  return {
+    ...defaultBoard(year),
+    ...data,
+    items: Array.isArray(data.items)
+      ? data.items.map((item) => ({
+          ...item,
+          width: typeof item.width === "number" ? item.width : 220,
+          height: typeof item.height === "number" ? item.height : 220,
+          imageRatio: typeof item.imageRatio === "number" ? item.imageRatio : undefined,
+        }))
+      : defaultBoard(year).items,
+  };
+}
+
+function noteStyle(kind: BoardItemKind) {
+  if (kind === "northstar") return "bg-amber-100 border-amber-300";
+  if (kind === "image") return "";
   return "bg-sky-100 border-sky-200";
 }
 
@@ -89,24 +121,20 @@ function nextId(prefix: string) {
 function kindLabel(kind: BoardItemKind) {
   if (kind === "goal") return "goal";
   if (kind === "win") return "win";
+  if (kind === "northstar") return "north star";
+  if (kind === "image") return "image";
   return "focus";
 }
 
 export default function Home() {
   const selectedYear = CURRENT_YEAR;
   const [board, setBoard] = useState<BoardData>(() => defaultBoard(CURRENT_YEAR));
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"unsaved" | "saving" | "saved" | "error">("saved");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [resizingId, setResizingId] = useState<string | null>(null);
-  const [groupDrag, setGroupDrag] = useState<{
-    draggedId: string;
-    offsetX: number;
-    offsetY: number;
-    areaW: number;
-    areaH: number;
-    starts: Record<string, { x: number; y: number; width: number; height: number }>;
-  } | null>(null);
+  const [isDragOverBoard, setIsDragOverBoard] = useState(false);
   const [marquee, setMarquee] = useState<{
     startX: number;
     startY: number;
@@ -134,25 +162,97 @@ export default function Home() {
     startW: number;
     startH: number;
   } | null>(null);
+  const didLoadRef = useRef(false);
+  const saveRunRef = useRef(0);
+  const dragSessionRef = useRef<{
+    ids: string[];
+    startPointerX: number;
+    startPointerY: number;
+    starts: Record<string, { x: number; y: number; width: number; height: number }>;
+  } | null>(null);
 
   const ownerName = "Mohamed Reda";
 
   const stats = useMemo(() => {
     const goals = board.items.filter((item) => item.kind === "goal").length;
     const wins = board.items.filter((item) => item.kind === "win").length;
+    const hasNorthStar = board.items.some((item) => item.kind === "northstar");
     const pct = goals === 0 ? 0 : Math.min(100, Math.round((wins / goals) * 100));
-    return { goals, wins, pct };
+    return { goals, wins, pct, hasNorthStar };
   }, [board.items]);
 
   useEffect(() => {
     boardRef.current = board;
   }, [board]);
 
+  const persistSilent = useCallback(async (next: BoardData, year = selectedYear) => {
+    let localOk = false;
+    try {
+      localStorage.setItem(storageKey(year), JSON.stringify(next));
+      localOk = true;
+    } catch {
+      // LocalStorage might hit quota with images.
+    }
+
+    try {
+      await idbSet(storageKey(year), next);
+      return true;
+    } catch {
+      return localOk;
+    }
+  }, [selectedYear]);
+
   useEffect(() => {
+    if (!isHydrated) return;
+    if (!didLoadRef.current) {
+      didLoadRef.current = true;
+      return;
+    }
+
+    const runId = ++saveRunRef.current;
+    const frame = window.requestAnimationFrame(() => setSaveStatus("unsaved"));
+    const timeout = window.setTimeout(() => {
+      setSaveStatus("saving");
+      void (async () => {
+        const ok = await persistSilent(board, selectedYear);
+        if (runId !== saveRunRef.current) return;
+        setSaveStatus(ok ? "saved" : "error");
+      })();
+    }, 260);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timeout);
+    };
+  }, [board, selectedYear, isHydrated, persistSilent]);
+
+  useEffect(() => {
+    let active = true;
     const frame = window.requestAnimationFrame(() => {
-      setBoard(loadBoard(CURRENT_YEAR));
+      void (async () => {
+        try {
+          const stored = (await idbGet(storageKey(CURRENT_YEAR))) as BoardData | undefined;
+          if (stored && active) {
+            setBoard(normalizeBoard(stored, CURRENT_YEAR));
+            setIsHydrated(true);
+            return;
+          }
+        } catch {
+          // fall back to localStorage
+        }
+
+        const fallback = loadBoard(CURRENT_YEAR);
+        if (active) {
+          setBoard(fallback);
+          setIsHydrated(true);
+        }
+      })();
     });
-    return () => window.cancelAnimationFrame(frame);
+
+    return () => {
+      active = false;
+      window.cancelAnimationFrame(frame);
+    };
   }, []);
 
   useEffect(() => {
@@ -161,7 +261,7 @@ export default function Home() {
 
   const cloneBoard = (value: BoardData): BoardData => JSON.parse(JSON.stringify(value)) as BoardData;
 
-  const saveBoard = (next: BoardData, year = selectedYear, trackHistory = true) => {
+  const saveBoard = (next: BoardData, _year = selectedYear, trackHistory = true) => {
     if (trackHistory) {
       historyRef.current.push(cloneBoard(boardRef.current));
       if (historyRef.current.length > 100) historyRef.current.shift();
@@ -169,11 +269,25 @@ export default function Home() {
     }
 
     setBoard(next);
-    localStorage.setItem(storageKey(year), JSON.stringify(next));
+    void _year;
   };
 
+  const forceSaveNow = useCallback(async () => {
+    if (!isHydrated) return;
+    const runId = ++saveRunRef.current;
+    setSaveStatus("saving");
+    const ok = await persistSilent(boardRef.current, selectedYear);
+    if (runId !== saveRunRef.current) return;
+    setSaveStatus(ok ? "saved" : "error");
+  }, [isHydrated, persistSilent, selectedYear]);
+
   const addCard = (kind: BoardItemKind) => {
+    if (kind === "northstar" && board.items.some((item) => item.kind === "northstar")) return;
     const index = board.items.length;
+    const isNorthStar = kind === "northstar";
+    const northStarWidth = 280;
+    const northStarHeight = 170;
+    const areaWidth = boardAreaRef.current?.clientWidth ?? CANVAS_WIDTH;
     const next: BoardData = {
       ...board,
       items: [
@@ -181,17 +295,137 @@ export default function Home() {
         {
           id: nextId(kind),
           kind,
-          text: kind === "goal" ? "new goal" : kind === "win" ? "new win" : "new focus",
-          x: 70 + ((index * 36) % 620),
-          y: 80 + ((index * 44) % 380),
-          width: 220,
-          height: 220,
+          text:
+            kind === "goal"
+              ? "new goal"
+              : kind === "win"
+                ? "new win"
+                : kind === "northstar"
+                  ? "your north star"
+                  : "new focus",
+          x: isNorthStar
+            ? Math.max(8, Math.round((areaWidth - northStarWidth) / 2))
+            : 70 + ((index * 36) % 620),
+          y: isNorthStar ? 24 : 80 + ((index * 44) % 380),
+          width: isNorthStar ? northStarWidth : 220,
+          height: isNorthStar ? northStarHeight : 220,
           tilt: (index % 6) - 3,
         },
       ],
     };
     saveBoard(next);
     setSelectedIds([next.items[next.items.length - 1].id]);
+  };
+
+  const addImageCard = (src: string, naturalWidth: number, naturalHeight: number, x: number, y: number) => {
+    const maxWidth = 360;
+    const maxHeight = 300;
+    const baseWidth = Math.max(1, naturalWidth);
+    const baseHeight = Math.max(1, naturalHeight);
+    const scale = Math.min(maxWidth / baseWidth, maxHeight / baseHeight, 1);
+    const width = Math.max(140, Math.round(baseWidth * scale));
+    const height = Math.max(100, Math.round(baseHeight * scale));
+
+    const nextItem: BoardItem = {
+      id: nextId("image"),
+      kind: "image",
+      text: "",
+      imageSrc: src,
+      imageRatio: baseWidth / baseHeight,
+      x: Math.max(0, Math.min(x, CANVAS_WIDTH - width)),
+      y: Math.max(0, Math.min(y, CANVAS_HEIGHT - height)),
+      width,
+      height,
+      tilt: 0,
+    };
+
+    const next = { ...boardRef.current, items: [...boardRef.current.items, nextItem] };
+    saveBoard(next);
+    setSelectedIds([nextItem.id]);
+  };
+
+  const fileToDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result ?? ""));
+      reader.onerror = () => reject(new Error("file read failed"));
+      reader.readAsDataURL(file);
+    });
+
+  const dataUrlToImage = (src: string) =>
+    new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new window.Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("image load failed"));
+      img.src = src;
+    });
+
+  const compressForStorage = async (file: File) => {
+    const src = await fileToDataUrl(file);
+    const img = await dataUrlToImage(src);
+
+    const maxSide = 1280;
+    const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+    const width = Math.max(1, Math.round(img.naturalWidth * scale));
+    const height = Math.max(1, Math.round(img.naturalHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return { src, width: img.naturalWidth, height: img.naturalHeight };
+    ctx.drawImage(img, 0, 0, width, height);
+
+    let quality = 0.88;
+    let out = canvas.toDataURL("image/webp", quality);
+    const targetMax = 1_400_000;
+    while (out.length > targetMax && quality > 0.5) {
+      quality -= 0.08;
+      out = canvas.toDataURL("image/webp", quality);
+    }
+
+    return { src: out, width, height };
+  };
+
+  const handleBoardDragOver = (event: React.DragEvent<HTMLElement>) => {
+    event.preventDefault();
+    setIsDragOverBoard(true);
+    event.dataTransfer.dropEffect = "copy";
+  };
+
+  const getDroppedImageFile = (event: React.DragEvent<HTMLElement>) => {
+    const dt = event.dataTransfer;
+    if (dt.files && dt.files.length > 0) {
+      const file = Array.from(dt.files).find((candidate) => candidate.type.startsWith("image/"));
+      if (file) return file;
+    }
+
+    if (dt.items && dt.items.length > 0) {
+      for (const item of Array.from(dt.items)) {
+        if (item.kind !== "file") continue;
+        const file = item.getAsFile();
+        if (file && file.type.startsWith("image/")) return file;
+      }
+    }
+
+    return null;
+  };
+
+  const handleBoardDrop = (event: React.DragEvent<HTMLElement>) => {
+    event.preventDefault();
+    setIsDragOverBoard(false);
+    const file = getDroppedImageFile(event);
+    if (!file || !boardAreaRef.current) return;
+
+    const areaRect = boardAreaRef.current.getBoundingClientRect();
+    const dropX = Math.max(0, event.clientX - areaRect.left);
+    const dropY = Math.max(0, event.clientY - areaRect.top);
+    void compressForStorage(file)
+      .then(({ src, width, height }) => {
+        addImageCard(src, width, height, dropX, dropY);
+      })
+      .catch(() => {
+        // Ignore invalid files quietly for now.
+      });
   };
 
   const updateCardText = (id: string, text: string) => {
@@ -203,7 +437,11 @@ export default function Home() {
   };
 
   const autoFitCardHeight = (id: string, contentEl: HTMLDivElement) => {
-    const neededHeight = Math.min(520, Math.max(160, contentEl.scrollHeight + 78));
+    const overflow = contentEl.scrollHeight - contentEl.clientHeight;
+    if (overflow <= 2) return;
+    const currentItem = boardRef.current.items.find((item) => item.id === id);
+    if (!currentItem) return;
+    const neededHeight = Math.min(520, Math.max(160, currentItem.height + overflow + 8));
     setBoard((prev) => ({
       ...prev,
       items: prev.items.map((item) =>
@@ -217,87 +455,26 @@ export default function Home() {
     }));
   };
 
-  const moveCard = (id: string, target: EventTarget | null) => {
-    if (!boardAreaRef.current || !(target instanceof HTMLElement)) return;
-    const current = boardRef.current;
-    const draggedItem = current.items.find((item) => item.id === id);
-    if (!draggedItem) return;
-    const areaRect = boardAreaRef.current.getBoundingClientRect();
-    const cardRect = target.getBoundingClientRect();
-    const maxX = Math.max(0, areaRect.width - cardRect.width);
-    const maxY = Math.max(0, areaRect.height - cardRect.height);
-    const draggedX = Math.min(maxX, Math.max(0, cardRect.left - areaRect.left));
-    const draggedY = Math.min(maxY, Math.max(0, cardRect.top - areaRect.top));
-    const offsetX = draggedX - draggedItem.x;
-    const offsetY = draggedY - draggedItem.y;
-    const selectedSet =
-      groupDrag && groupDrag.draggedId === id
-        ? new Set(Object.keys(groupDrag.starts))
-        : new Set(selectedIdsRef.current);
-    const moveGroup = selectedSet.size > 1 && selectedSet.has(id);
-
-    const next = {
-      ...current,
-      items: current.items.map((item) => {
-        if (!moveGroup && item.id === id) {
-          return { ...item, x: draggedX, y: draggedY };
-        }
-        if (moveGroup && selectedSet.has(item.id)) {
-          const itemMaxX = Math.max(0, areaRect.width - item.width);
-          const itemMaxY = Math.max(0, areaRect.height - item.height);
-          return {
-            ...item,
-            x: Math.min(itemMaxX, Math.max(0, item.x + offsetX)),
-            y: Math.min(itemMaxY, Math.max(0, item.y + offsetY)),
-          };
-        }
-        return item;
-      }),
-    };
-    saveBoard(next, selectedYear);
-  };
-
-  const startGroupDrag = (id: string) => {
+  const startPointerDrag = (id: string, event: React.PointerEvent<HTMLElement>) => {
+    if (!boardAreaRef.current || event.button !== 0 || resizeRef.current) return;
     const selectedSet = new Set(selectedIdsRef.current);
-    if (!(selectedSet.size > 1 && selectedSet.has(id))) {
-      setGroupDrag(null);
-      return;
-    }
-
-    const areaW = CANVAS_WIDTH;
-    const areaH = CANVAS_HEIGHT;
+    const ids = selectedSet.size > 1 && selectedSet.has(id) ? selectedIdsRef.current : [id];
     const starts: Record<string, { x: number; y: number; width: number; height: number }> = {};
+
     for (const item of boardRef.current.items) {
-      if (!selectedSet.has(item.id)) continue;
+      if (!ids.includes(item.id)) continue;
       starts[item.id] = { x: item.x, y: item.y, width: item.width, height: item.height };
     }
-    setGroupDrag({ draggedId: id, offsetX: 0, offsetY: 0, areaW, areaH, starts });
-  };
 
-  const dragGroupLive = (id: string, info: PanInfo) => {
-    setGroupDrag((prev) => {
-      if (!prev || prev.draggedId !== id) return prev;
-      return { ...prev, offsetX: info.offset.x, offsetY: info.offset.y };
-    });
-  };
-
-  const getItemPosition = (item: BoardItem) => {
-    if (!groupDrag) return { left: item.x, top: item.y };
-    const isGrouped = selectedIds.includes(item.id) && item.id !== groupDrag.draggedId;
-    if (!isGrouped) return { left: item.x, top: item.y };
-    const start = groupDrag.starts[item.id];
-    if (!start) return { left: item.x, top: item.y };
-
-    const maxX = Math.max(0, groupDrag.areaW - item.width);
-    const maxY = Math.max(0, groupDrag.areaH - item.height);
-    return {
-      left: Math.min(maxX, Math.max(0, start.x + groupDrag.offsetX)),
-      top: Math.min(maxY, Math.max(0, start.y + groupDrag.offsetY)),
+    dragSessionRef.current = {
+      ids,
+      startPointerX: event.clientX,
+      startPointerY: event.clientY,
+      starts,
     };
-  };
-
-  const togglePrivacy = () => {
-    saveBoard({ ...board, isPublic: !board.isPublic });
+    historyRef.current.push(cloneBoard(boardRef.current));
+    if (historyRef.current.length > 100) historyRef.current.shift();
+    futureRef.current = [];
   };
 
   const startTitleEdit = () => {
@@ -354,7 +531,6 @@ export default function Home() {
     historyRef.current.push(cloneBoard(boardRef.current));
     if (historyRef.current.length > 100) historyRef.current.shift();
     futureRef.current = [];
-    setResizingId(item.id);
     setSelectedIds([item.id]);
     resizeRef.current = {
       id: item.id,
@@ -370,8 +546,8 @@ export default function Home() {
       const active = resizeRef.current;
       if (!active) return;
 
-      const width = Math.min(520, Math.max(160, active.startW + (event.clientX - active.startX)));
-      const height = Math.min(520, Math.max(160, active.startH + (event.clientY - active.startY)));
+      const dx = event.clientX - active.startX;
+      const dy = event.clientY - active.startY;
 
       setBoard((prev) => ({
         ...prev,
@@ -379,8 +555,32 @@ export default function Home() {
           item.id === active.id
             ? {
                 ...item,
-                width,
-                height,
+                ...(item.kind === "image"
+                  ? (() => {
+                      if (event.ctrlKey) {
+                        const freeWidth = Math.min(900, Math.max(120, active.startW + dx));
+                        const freeHeight = Math.min(900, Math.max(100, active.startH + dy));
+                        return {
+                          width: freeWidth,
+                          height: freeHeight,
+                          imageRatio: freeWidth / freeHeight,
+                        };
+                      }
+                      const ratio = item.imageRatio && item.imageRatio > 0 ? item.imageRatio : active.startW / active.startH;
+                      const scaleX = (active.startW + dx) / active.startW;
+                      const scaleY = (active.startH + dy) / active.startH;
+                      const scale = Math.max(scaleX, scaleY);
+                      const nextWidth = Math.min(900, Math.max(120, Math.round(active.startW * scale)));
+                      return {
+                        width: nextWidth,
+                        height: Math.round(nextWidth / ratio),
+                        imageRatio: ratio,
+                      };
+                    })()
+                  : {
+                      width: Math.min(520, Math.max(160, active.startW + dx)),
+                      height: Math.min(520, Math.max(160, active.startH + dy)),
+                    }),
               }
             : item,
         ),
@@ -390,11 +590,57 @@ export default function Home() {
     const handlePointerUp = () => {
       if (!resizeRef.current) return;
       resizeRef.current = null;
-      setResizingId(null);
-      setBoard((prev) => {
-        localStorage.setItem(storageKey(CURRENT_YEAR), JSON.stringify(prev));
-        return prev;
-      });
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const drag = dragSessionRef.current;
+      if (!drag || !boardAreaRef.current) return;
+
+      const areaWidth = boardAreaRef.current.clientWidth;
+      const areaHeight = boardAreaRef.current.clientHeight;
+      const rawDx = event.clientX - drag.startPointerX;
+      const rawDy = event.clientY - drag.startPointerY;
+
+      let minDx = -Infinity;
+      let maxDx = Infinity;
+      let minDy = -Infinity;
+      let maxDy = Infinity;
+      for (const id of drag.ids) {
+        const start = drag.starts[id];
+        if (!start) continue;
+        minDx = Math.max(minDx, -start.x);
+        maxDx = Math.min(maxDx, areaWidth - start.width - start.x);
+        minDy = Math.max(minDy, -start.y);
+        maxDy = Math.min(maxDy, areaHeight - start.height - start.y);
+      }
+
+      const dx = Math.min(maxDx, Math.max(minDx, rawDx));
+      const dy = Math.min(maxDy, Math.max(minDy, rawDy));
+      const idsSet = new Set(drag.ids);
+
+      setBoard((prev) => ({
+        ...prev,
+        items: prev.items.map((item) => {
+          if (!idsSet.has(item.id)) return item;
+          const start = drag.starts[item.id];
+          if (!start) return item;
+          return { ...item, x: start.x + dx, y: start.y + dy };
+        }),
+      }));
+    };
+
+    const handlePointerUp = () => {
+      if (!dragSessionRef.current) return;
+      dragSessionRef.current = null;
     };
 
     window.addEventListener("pointermove", handlePointerMove);
@@ -462,7 +708,6 @@ export default function Home() {
       if (!previous) return;
       futureRef.current.unshift(cloneBoard(boardRef.current));
       setBoard(previous);
-      localStorage.setItem(storageKey(CURRENT_YEAR), JSON.stringify(previous));
     };
 
     const handleRedo = () => {
@@ -470,13 +715,10 @@ export default function Home() {
       if (!next) return;
       historyRef.current.push(cloneBoard(boardRef.current));
       setBoard(next);
-      localStorage.setItem(storageKey(CURRENT_YEAR), JSON.stringify(next));
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
       const mod = event.ctrlKey || event.metaKey;
-      if (isEditingTarget(event.target)) return;
-
       if (mod && event.key.toLowerCase() === "z") {
         event.preventDefault();
         if (event.shiftKey) {
@@ -496,6 +738,36 @@ export default function Home() {
       const current = boardRef.current;
       const selectedSet = new Set(selectedIdsRef.current);
       const selectedItems = current.items.filter((item) => selectedSet.has(item.id));
+      const step = event.shiftKey ? 16 : 4;
+
+      if (selectedItems.length > 0 && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
+        event.preventDefault();
+        const areaWidth = boardAreaRef.current?.clientWidth ?? CANVAS_WIDTH;
+        const areaHeight = boardAreaRef.current?.clientHeight ?? CANVAS_HEIGHT;
+        const dx = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
+        const dy = event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
+
+        const next = {
+          ...current,
+          items: current.items.map((item) => {
+            if (!selectedSet.has(item.id)) return item;
+            const maxX = Math.max(0, areaWidth - item.width);
+            const maxY = Math.max(0, areaHeight - item.height);
+            return {
+              ...item,
+              x: Math.min(maxX, Math.max(0, item.x + dx)),
+              y: Math.min(maxY, Math.max(0, item.y + dy)),
+            };
+          }),
+        };
+        historyRef.current.push(cloneBoard(boardRef.current));
+        if (historyRef.current.length > 100) historyRef.current.shift();
+        futureRef.current = [];
+        setBoard(next);
+        return;
+      }
+
+      if (isEditingTarget(event.target)) return;
 
       if (mod && event.key.toLowerCase() === "a") {
         event.preventDefault();
@@ -520,7 +792,6 @@ export default function Home() {
         if (historyRef.current.length > 100) historyRef.current.shift();
         futureRef.current = [];
         setBoard(next);
-        localStorage.setItem(storageKey(CURRENT_YEAR), JSON.stringify(next));
         return;
       }
 
@@ -539,7 +810,6 @@ export default function Home() {
         if (historyRef.current.length > 100) historyRef.current.shift();
         futureRef.current = [];
         setBoard(next);
-        localStorage.setItem(storageKey(CURRENT_YEAR), JSON.stringify(next));
         return;
       }
 
@@ -558,7 +828,6 @@ export default function Home() {
         if (historyRef.current.length > 100) historyRef.current.shift();
         futureRef.current = [];
         setBoard(next);
-        localStorage.setItem(storageKey(CURRENT_YEAR), JSON.stringify(next));
         return;
       }
 
@@ -571,7 +840,6 @@ export default function Home() {
         if (historyRef.current.length > 100) historyRef.current.shift();
         futureRef.current = [];
         setBoard(next);
-        localStorage.setItem(storageKey(CURRENT_YEAR), JSON.stringify(next));
         return;
       }
 
@@ -592,7 +860,6 @@ export default function Home() {
         futureRef.current = [];
         const next = { ...current, items: [...rest, ...picked] };
         setBoard(next);
-        localStorage.setItem(storageKey(CURRENT_YEAR), JSON.stringify(next));
         return;
       }
 
@@ -609,7 +876,6 @@ export default function Home() {
         futureRef.current = [];
         const next = { ...current, items: [...picked, ...rest] };
         setBoard(next);
-        localStorage.setItem(storageKey(CURRENT_YEAR), JSON.stringify(next));
       }
     };
 
@@ -629,7 +895,7 @@ export default function Home() {
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.8)_0%,rgba(241,245,249,0.92)_100%)]" />
 
       <main className="relative z-10 mx-auto h-screen max-w-[1600px] p-3 sm:p-5">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start">
           <Card className="w-fit max-w-[calc(100%-1rem)] border border-slate-200/80 bg-white/95 shadow-md">
             <CardBody className="flex flex-row items-center justify-between gap-3 p-3">
               <div className="flex items-center gap-3 overflow-hidden">
@@ -665,31 +931,37 @@ export default function Home() {
                     {board.title}
                   </button>
                 )}
-                <Chip size="sm" variant="flat" color="secondary">
-                  free
-                </Chip>
-              </div>
-            </CardBody>
-          </Card>
-
-          <Card className="w-full max-w-[420px] border border-slate-200/80 bg-white/95 shadow-md">
-            <CardBody className="flex flex-row items-center justify-between gap-2 p-3">
-              <div className="flex items-center gap-2">
-                <div className="h-7 w-7 rounded-full bg-slate-800" />
-                <Chip size="sm" variant="flat" color={board.isPublic ? "success" : "default"}>
-                  {board.isPublic ? "public" : "private"}
-                </Chip>
-                <Chip size="sm" variant="flat" color="warning">
-                  {stats.pct}%
-                </Chip>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="flat" onPress={togglePrivacy}>
-                  {board.isPublic ? "lock" : "publish"}
-                </Button>
-                <Button size="sm" color="primary">
-                  share
-                </Button>
+                <Tooltip
+                  content={
+                    saveStatus === "saved"
+                      ? "saved"
+                      : saveStatus === "saving"
+                        ? "saving..."
+                        : saveStatus === "unsaved"
+                          ? "not saved - click to save"
+                          : "save failed - click to retry"
+                  }
+                  delay={120}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void forceSaveNow();
+                    }}
+                    className="grid h-6 w-6 place-items-center text-slate-500"
+                    aria-label="save board now"
+                  >
+                    {saveStatus === "saved" ? (
+                      <FiCloud className="text-sm text-emerald-600" />
+                    ) : saveStatus === "saving" ? (
+                      <FiLoader className="text-sm animate-spin text-sky-600" />
+                    ) : saveStatus === "unsaved" ? (
+                      <FiCloudOff className="text-sm text-amber-500" />
+                    ) : (
+                      <FiCloudOff className="text-sm text-rose-600" />
+                    )}
+                  </button>
+                </Tooltip>
               </div>
             </CardBody>
           </Card>
@@ -698,7 +970,18 @@ export default function Home() {
         <section
           ref={boardAreaRef}
           onPointerDown={startMarquee}
-          className="relative mt-4 h-[calc(100vh-175px)] w-full overflow-hidden rounded-2xl border border-slate-200/70 bg-white/25 backdrop-blur-[2px]"
+          onDragEnterCapture={(event) => {
+            event.preventDefault();
+            setIsDragOverBoard(true);
+          }}
+          onDragOver={handleBoardDragOver}
+          onDragOverCapture={handleBoardDragOver}
+          onDragLeaveCapture={() => setIsDragOverBoard(false)}
+          onDrop={handleBoardDrop}
+          onDropCapture={handleBoardDrop}
+          className={`relative mt-4 h-[calc(100vh-175px)] w-full overflow-hidden rounded-2xl border bg-white/25 backdrop-blur-[2px] ${
+            isDragOverBoard ? "border-sky-400/80 shadow-[0_0_0_2px_rgba(56,189,248,0.25)]" : "border-slate-200/70"
+          }`}
         >
           {board.items.length === 0 ? (
             <div className="grid h-full place-items-center text-slate-500">
@@ -706,25 +989,11 @@ export default function Home() {
             </div>
           ) : (
             board.items.map((item, idx) => (
-              (() => {
-                const pos = getItemPosition(item);
-                return (
-                  <motion.article
-                    key={item.id}
-                    initial={{ opacity: 0, y: 14 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: idx * 0.03, duration: 0.24 }}
-                    drag={resizingId !== item.id}
-                    dragMomentum={false}
-                    dragElastic={0}
-                    dragConstraints={boardAreaRef}
-                    onDragStart={() => startGroupDrag(item.id)}
-                    onDrag={(_, info) => dragGroupLive(item.id, info)}
-                    onDragEnd={(event) => {
-                      if (resizeRef.current?.id === item.id) return;
-                      moveCard(item.id, event.currentTarget);
-                      setGroupDrag(null);
-                    }}
+              <motion.article
+                key={item.id}
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.03, duration: 0.24 }}
                 onPointerDown={(event) => {
                   event.stopPropagation();
                   const multi = event.shiftKey || event.ctrlKey || event.metaKey;
@@ -735,31 +1004,56 @@ export default function Home() {
                     return;
                   }
                   setSelectedIds((prev) => (prev.includes(item.id) ? prev : [item.id]));
+                  startPointerDrag(item.id, event);
                 }}
-                    className={`absolute flex cursor-grab flex-col rounded-sm border p-3 shadow-sm active:cursor-grabbing ${noteStyle()} ${
-                      selectedIds.includes(item.id) ? "ring-2 ring-slate-500/50" : ""
+                className={`absolute flex cursor-grab flex-col rounded-sm active:cursor-grabbing ${
+                  item.kind === "image" ? "p-0" : "p-3"
+                } ${item.kind === "image" ? "" : "border shadow-sm"} ${noteStyle(item.kind)} ${
+                  item.kind !== "image" && selectedIds.includes(item.id) ? "ring-2 ring-slate-500/50" : ""
+                }`}
+                style={{ left: item.x, top: item.y, width: item.width, height: item.height, zIndex: idx + 1 }}
+              >
+                {item.kind !== "image" && (
+                  <Chip
+                    size="sm"
+                    variant="flat"
+                    radius="sm"
+                    className={`absolute -top-3 left-3 px-2 text-[10px] font-medium uppercase tracking-wide ${
+                      item.kind === "northstar"
+                        ? "border border-amber-400 bg-amber-200 text-amber-900"
+                        : "border border-slate-300 bg-slate-100 text-slate-600"
                     }`}
-                    style={{ left: pos.left, top: pos.top, width: item.width, height: item.height, zIndex: idx + 1 }}
                   >
-                <Chip
-                  size="sm"
-                  variant="flat"
-                  radius="sm"
-                  className="absolute -top-3 left-3 border border-slate-300 bg-slate-100 px-2 text-[10px] font-medium uppercase tracking-wide text-slate-600"
-                >
-                  {kindLabel(item.kind)}
-                </Chip>
-                <div
-                  className="flex-1 whitespace-pre-wrap rounded-sm bg-transparent p-2 text-sm leading-snug text-slate-700 outline-none ring-0"
-                  contentEditable
-                  suppressContentEditableWarning
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onInput={(event) => autoFitCardHeight(item.id, event.currentTarget)}
-                  onBlur={(event) => updateCardText(item.id, event.currentTarget.textContent ?? "")}
-                >
-                  {item.text}
-                </div>
-                <p className="mt-2 text-xs text-slate-500">{ownerName}</p>
+                    {kindLabel(item.kind)}
+                  </Chip>
+                )}
+                {item.kind === "image" && item.imageSrc ? (
+                  <div className="relative flex-1 overflow-hidden rounded-sm bg-transparent">
+                    <Image
+                      src={item.imageSrc}
+                      alt="vision board upload"
+                      fill
+                      unoptimized
+                      sizes="360px"
+                      draggable={false}
+                      className="pointer-events-none object-fill select-none"
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      className="flex-1 whitespace-pre-wrap rounded-sm bg-transparent p-2 text-sm leading-snug text-slate-700 outline-none ring-0"
+                      contentEditable
+                      suppressContentEditableWarning
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onInput={(event) => autoFitCardHeight(item.id, event.currentTarget)}
+                      onBlur={(event) => updateCardText(item.id, event.currentTarget.textContent ?? "")}
+                    >
+                      {item.text}
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">{ownerName}</p>
+                  </>
+                )}
                 {selectedIds.includes(item.id) && (
                   <button
                     type="button"
@@ -768,9 +1062,7 @@ export default function Home() {
                     onPointerDown={(event) => startResize(event, item)}
                   />
                 )}
-                  </motion.article>
-                );
-              })()
+              </motion.article>
             ))
           )}
           {marquee && (
@@ -805,6 +1097,19 @@ export default function Home() {
                 <Button size="sm" variant="flat" isIconOnly onPress={() => addCard("focus")} aria-label="add focus">
                   <span className="sr-only">add focus</span>
                   <FiEye className="text-sm" />
+                </Button>
+              </Tooltip>
+              <Tooltip content="add north star" delay={120}>
+                <Button
+                  size="sm"
+                  variant="flat"
+                  isIconOnly
+                  onPress={() => addCard("northstar")}
+                  isDisabled={stats.hasNorthStar}
+                  aria-label="add north star"
+                >
+                  <span className="sr-only">add north star</span>
+                  <FiStar className="text-sm" />
                 </Button>
               </Tooltip>
               <div className="mx-1 h-6 w-px bg-slate-200" />
