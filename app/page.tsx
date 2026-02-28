@@ -11,13 +11,14 @@ import {
   FiCloudOff,
   FiEye,
   FiLoader,
+  FiSmile,
   FiStar,
   FiTarget,
 } from "react-icons/fi";
 import Image from "next/image";
 import { get as idbGet, set as idbSet } from "idb-keyval";
 
-type BoardItemKind = "goal" | "win" | "focus" | "northstar" | "image";
+type BoardItemKind = "goal" | "win" | "focus" | "northstar" | "image" | "stamp";
 
 type BoardItem = {
   id: string;
@@ -43,6 +44,7 @@ const CURRENT_YEAR = new Date().getFullYear();
 const CANVAS_WIDTH = 2800;
 const CANVAS_HEIGHT = 1800;
 let idCounter = 1;
+const STAMP_SET = ["💖", "👍", "⭐", "🔥", "👀", "✅", "🎯", "🚀", "💡", "🎉", "💰", "❓"];
 
 function storageKey(year: number) {
   return `vision-board-${year}`;
@@ -109,7 +111,7 @@ function normalizeBoard(data: BoardData, year: number): BoardData {
 
 function noteStyle(kind: BoardItemKind) {
   if (kind === "northstar") return "bg-amber-100 border-amber-300";
-  if (kind === "image") return "";
+  if (kind === "image" || kind === "stamp") return "";
   return "bg-sky-100 border-sky-200";
 }
 
@@ -123,6 +125,7 @@ function kindLabel(kind: BoardItemKind) {
   if (kind === "win") return "win";
   if (kind === "northstar") return "north star";
   if (kind === "image") return "image";
+  if (kind === "stamp") return "stamp";
   return "focus";
 }
 
@@ -134,7 +137,9 @@ export default function Home() {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [isDragOverBoard, setIsDragOverBoard] = useState(false);
+  const [isStampPickerOpen, setIsStampPickerOpen] = useState(false);
   const [marquee, setMarquee] = useState<{
     startX: number;
     startY: number;
@@ -317,6 +322,42 @@ export default function Home() {
     setSelectedIds([next.items[next.items.length - 1].id]);
   };
 
+  const addStamp = (value: string) => {
+    const index = boardRef.current.items.length;
+    const size = 88;
+    const nextItem: BoardItem = {
+      id: nextId("stamp"),
+      kind: "stamp",
+      text: value,
+      x: 120 + ((index * 28) % 720),
+      y: 120 + ((index * 24) % 420),
+      width: size,
+      height: size,
+      tilt: 0,
+    };
+    const next = { ...boardRef.current, items: [...boardRef.current.items, nextItem] };
+    saveBoard(next);
+    setSelectedIds([nextItem.id]);
+    setIsStampPickerOpen(false);
+  };
+
+  const addStampAt = (value: string, x: number, y: number) => {
+    const size = 88;
+    const nextItem: BoardItem = {
+      id: nextId("stamp"),
+      kind: "stamp",
+      text: value,
+      x: Math.max(0, Math.min(x - size / 2, CANVAS_WIDTH - size)),
+      y: Math.max(0, Math.min(y - size / 2, CANVAS_HEIGHT - size)),
+      width: size,
+      height: size,
+      tilt: 0,
+    };
+    const next = { ...boardRef.current, items: [...boardRef.current.items, nextItem] };
+    saveBoard(next);
+    setSelectedIds([nextItem.id]);
+  };
+
   const addImageCard = (src: string, naturalWidth: number, naturalHeight: number, x: number, y: number) => {
     const maxWidth = 360;
     const maxHeight = 300;
@@ -410,15 +451,38 @@ export default function Home() {
     return null;
   };
 
+  const getDroppedStamp = (event: React.DragEvent<HTMLElement>) => {
+    const dt = event.dataTransfer;
+    const raw = dt.getData("application/x-vision-stamp") || dt.getData("text/plain");
+    const value = raw.trim();
+    return STAMP_SET.includes(value) ? value : null;
+  };
+
+  const startStampDrag = (event: React.DragEvent<HTMLButtonElement>, value: string) => {
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData("application/x-vision-stamp", value);
+    event.dataTransfer.setData("text/plain", value);
+    setIsStampPickerOpen(false);
+  };
+
   const handleBoardDrop = (event: React.DragEvent<HTMLElement>) => {
+    if (event.defaultPrevented) return;
     event.preventDefault();
     setIsDragOverBoard(false);
-    const file = getDroppedImageFile(event);
-    if (!file || !boardAreaRef.current) return;
+    if (!boardAreaRef.current) return;
 
     const areaRect = boardAreaRef.current.getBoundingClientRect();
     const dropX = Math.max(0, event.clientX - areaRect.left);
     const dropY = Math.max(0, event.clientY - areaRect.top);
+
+    const stamp = getDroppedStamp(event);
+    if (stamp) {
+      addStampAt(stamp, dropX, dropY);
+      return;
+    }
+
+    const file = getDroppedImageFile(event);
+    if (!file) return;
     void compressForStorage(file)
       .then(({ src, width, height }) => {
         addImageCard(src, width, height, dropX, dropY);
@@ -604,6 +668,8 @@ export default function Home() {
     const handlePointerMove = (event: PointerEvent) => {
       const drag = dragSessionRef.current;
       if (!drag || !boardAreaRef.current) return;
+      document.body.style.userSelect = "none";
+      window.getSelection()?.removeAllRanges();
 
       const areaWidth = boardAreaRef.current.clientWidth;
       const areaHeight = boardAreaRef.current.clientHeight;
@@ -641,11 +707,13 @@ export default function Home() {
     const handlePointerUp = () => {
       if (!dragSessionRef.current) return;
       dragSessionRef.current = null;
+      document.body.style.userSelect = "";
     };
 
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
     return () => {
+      document.body.style.userSelect = "";
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
@@ -1007,13 +1075,13 @@ export default function Home() {
                   startPointerDrag(item.id, event);
                 }}
                 className={`absolute flex cursor-grab flex-col rounded-sm active:cursor-grabbing ${
-                  item.kind === "image" ? "p-0" : "p-3"
-                } ${item.kind === "image" ? "" : "border shadow-sm"} ${noteStyle(item.kind)} ${
+                  item.kind === "image" || item.kind === "stamp" ? "p-0" : "p-3"
+                } ${item.kind === "image" || item.kind === "stamp" ? "" : "border shadow-sm"} ${noteStyle(item.kind)} ${
                   item.kind !== "image" && selectedIds.includes(item.id) ? "ring-2 ring-slate-500/50" : ""
-                }`}
+                } select-none`}
                 style={{ left: item.x, top: item.y, width: item.width, height: item.height, zIndex: idx + 1 }}
               >
-                {item.kind !== "image" && (
+                {item.kind !== "image" && item.kind !== "stamp" && (
                   <Chip
                     size="sm"
                     variant="flat"
@@ -1039,19 +1107,43 @@ export default function Home() {
                       className="pointer-events-none object-fill select-none"
                     />
                   </div>
+                ) : item.kind === "stamp" ? (
+                  <div
+                    className="pointer-events-none grid h-full w-full place-items-center bg-transparent text-4xl leading-none"
+                    style={{ fontSize: `${Math.max(32, Math.round(Math.min(item.width, item.height) * 0.52))}px` }}
+                  >
+                    {item.text || "⭐"}
+                  </div>
                 ) : (
                   <>
                     <div
-                      className="flex-1 whitespace-pre-wrap rounded-sm bg-transparent p-2 text-sm leading-snug text-slate-700 outline-none ring-0"
-                      contentEditable
+                      className={`flex-1 whitespace-pre-wrap rounded-sm bg-transparent p-2 text-sm leading-snug text-slate-700 outline-none ring-0 ${
+                        editingTextId === item.id ? "select-text" : "select-none"
+                      }`}
+                      contentEditable={editingTextId === item.id}
                       suppressContentEditableWarning
-                      onPointerDown={(event) => event.stopPropagation()}
+                      onDoubleClick={(event) => {
+                        event.stopPropagation();
+                        setEditingTextId(item.id);
+                        const el = event.currentTarget;
+                        window.requestAnimationFrame(() => {
+                          el.focus();
+                        });
+                      }}
+                      onPointerDown={(event) => {
+                        if (editingTextId === item.id) {
+                          event.stopPropagation();
+                        }
+                      }}
                       onInput={(event) => autoFitCardHeight(item.id, event.currentTarget)}
-                      onBlur={(event) => updateCardText(item.id, event.currentTarget.textContent ?? "")}
+                      onBlur={(event) => {
+                        updateCardText(item.id, event.currentTarget.textContent ?? "");
+                        if (editingTextId === item.id) setEditingTextId(null);
+                      }}
                     >
                       {item.text}
                     </div>
-                    <p className="mt-2 text-xs text-slate-500">{ownerName}</p>
+                    <p className="mt-2 select-none text-xs text-slate-500">{ownerName}</p>
                   </>
                 )}
                 {selectedIds.includes(item.id) && (
@@ -1079,8 +1171,8 @@ export default function Home() {
         </section>
 
         <div className="pointer-events-none fixed inset-x-0 bottom-4 z-20 flex justify-center px-4">
-          <Card className="pointer-events-auto border border-slate-200/85 bg-white/95 shadow-lg">
-            <CardBody className="flex flex-row items-center gap-2 p-2">
+          <Card className="pointer-events-auto relative overflow-visible border border-slate-200/85 bg-white/95 shadow-lg">
+            <CardBody className="flex flex-row items-center gap-2 overflow-visible p-2">
               <Tooltip content="add goal" delay={120}>
                 <Button size="sm" variant="flat" isIconOnly onPress={() => addCard("goal")} aria-label="add goal">
                   <span className="sr-only">add goal</span>
@@ -1110,6 +1202,18 @@ export default function Home() {
                 >
                   <span className="sr-only">add north star</span>
                   <FiStar className="text-sm" />
+                </Button>
+              </Tooltip>
+              <Tooltip content="add stamp" delay={120}>
+                <Button
+                  size="sm"
+                  variant={isStampPickerOpen ? "solid" : "flat"}
+                  color={isStampPickerOpen ? "secondary" : "default"}
+                  isIconOnly
+                  onPress={() => setIsStampPickerOpen((prev) => !prev)}
+                  aria-label="open stamp picker"
+                >
+                  <FiSmile className="text-sm" />
                 </Button>
               </Tooltip>
               <div className="mx-1 h-6 w-px bg-slate-200" />
@@ -1148,6 +1252,26 @@ export default function Home() {
                 {stats.wins} wins
               </Chip>
             </CardBody>
+            {isStampPickerOpen && (
+              <div className="absolute bottom-[calc(100%+10px)] left-1/2 z-30 -translate-x-1/2 rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-xl backdrop-blur">
+                <p className="mb-2 px-1 text-xs text-slate-500">drag an emoji to drop it on the board</p>
+                <div className="grid grid-cols-6 gap-2">
+                  {STAMP_SET.map((stamp) => (
+                    <button
+                      key={stamp}
+                      type="button"
+                      draggable
+                      onDragStart={(event) => startStampDrag(event, stamp)}
+                      onClick={() => addStamp(stamp)}
+                      className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-slate-50 text-xl transition hover:bg-slate-100"
+                      aria-label={`add stamp ${stamp}`}
+                    >
+                      {stamp}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </Card>
         </div>
       </main>
