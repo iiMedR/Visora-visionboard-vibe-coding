@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, Card, CardBody, Chip, Input } from "@heroui/react";
+import { Button, Card, CardBody, Chip, Input, Tooltip } from "@heroui/react";
 import { motion, PanInfo } from "framer-motion";
+import { FiAward, FiChevronsDown, FiChevronsUp, FiEye, FiTarget } from "react-icons/fi";
 
 type BoardItemKind = "goal" | "win" | "focus";
 
@@ -788,36 +789,49 @@ export default function Home() {
         <div className="pointer-events-none fixed inset-x-0 bottom-4 z-20 flex justify-center px-4">
           <Card className="pointer-events-auto border border-slate-200/85 bg-white/95 shadow-lg">
             <CardBody className="flex flex-row items-center gap-2 p-2">
-              <Button size="sm" variant="flat" onPress={() => addCard("goal")}>
-                + goal
-              </Button>
-              <Button size="sm" variant="flat" onPress={() => addCard("win")}>
-                + win
-              </Button>
-              <Button size="sm" variant="flat" onPress={() => addCard("focus")}>
-                + focus
-              </Button>
+              <Tooltip content="add goal" delay={120}>
+                <Button size="sm" variant="flat" isIconOnly onPress={() => addCard("goal")} aria-label="add goal">
+                  <span className="sr-only">add goal</span>
+                  <FiTarget className="text-sm" />
+                </Button>
+              </Tooltip>
+              <Tooltip content="add win" delay={120}>
+                <Button size="sm" variant="flat" isIconOnly onPress={() => addCard("win")} aria-label="add win">
+                  <span className="sr-only">add win</span>
+                  <FiAward className="text-sm" />
+                </Button>
+              </Tooltip>
+              <Tooltip content="add focus" delay={120}>
+                <Button size="sm" variant="flat" isIconOnly onPress={() => addCard("focus")} aria-label="add focus">
+                  <span className="sr-only">add focus</span>
+                  <FiEye className="text-sm" />
+                </Button>
+              </Tooltip>
               <div className="mx-1 h-6 w-px bg-slate-200" />
-              <Button
-                size="sm"
-                variant="flat"
-                onPress={() => reorderLayers("back")}
-                isDisabled={selectedIds.length === 0}
-                isIconOnly
-                aria-label="send selected backward"
-              >
-                v
-              </Button>
-              <Button
-                size="sm"
-                variant="flat"
-                onPress={() => reorderLayers("front")}
-                isDisabled={selectedIds.length === 0}
-                isIconOnly
-                aria-label="bring selected forward"
-              >
-                ^
-              </Button>
+              <Tooltip content="send to back" delay={120}>
+                <Button
+                  size="sm"
+                  variant="flat"
+                  onPress={() => reorderLayers("back")}
+                  isDisabled={selectedIds.length === 0}
+                  isIconOnly
+                  aria-label="send selected backward"
+                >
+                  <FiChevronsDown className="text-sm" />
+                </Button>
+              </Tooltip>
+              <Tooltip content="bring to front" delay={120}>
+                <Button
+                  size="sm"
+                  variant="flat"
+                  onPress={() => reorderLayers("front")}
+                  isDisabled={selectedIds.length === 0}
+                  isIconOnly
+                  aria-label="bring selected forward"
+                >
+                  <FiChevronsUp className="text-sm" />
+                </Button>
+              </Tooltip>
               <Chip size="sm" variant="flat">
                 {selectedIds.length} selected
               </Chip>
