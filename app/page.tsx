@@ -194,6 +194,10 @@ function kindLabel(kind: BoardItemKind) {
   return "focus";
 }
 
+function readEditableText(node: HTMLElement) {
+  return node.innerText.replace(/\r\n/g, "\n");
+}
+
 export default function Home() {
   const selectedYear = CURRENT_YEAR;
   const [board, setBoard] = useState<BoardData>(() => defaultBoard(CURRENT_YEAR));
@@ -1195,6 +1199,15 @@ export default function Home() {
     return () => window.clearTimeout(timeout);
   }, [board.items, editingTextId]);
 
+  if (!isHydrated) {
+    return (
+      <div className="relative min-h-screen overflow-hidden bg-slate-100 font-[family-name:var(--font-space-grotesk)] text-slate-800">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle,_rgba(15,23,42,0.16)_1px,transparent_1px)] bg-[size:16px_16px]" />
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.8)_0%,rgba(241,245,249,0.92)_100%)]" />
+      </div>
+    );
+  }
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-slate-100 font-[family-name:var(--font-space-grotesk)] text-slate-800">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle,_rgba(15,23,42,0.16)_1px,transparent_1px)] bg-[size:16px_16px]" />
@@ -1486,10 +1499,10 @@ export default function Home() {
                       setSelectedIds([item.id]);
                     }}
                     onInput={(event) => {
-                      registerLiveTextDraft(item.id, event.currentTarget.textContent ?? "");
+                      registerLiveTextDraft(item.id, readEditableText(event.currentTarget));
                     }}
                     onBlur={(event) => {
-                      updateCardText(item.id, event.currentTarget.textContent ?? "");
+                      updateCardText(item.id, readEditableText(event.currentTarget));
                       if (editingTextId === item.id) setEditingTextId(null);
                     }}
                   >
@@ -1498,7 +1511,7 @@ export default function Home() {
                 ) : (
                   <>
                     <div
-                      className={`flex-1 whitespace-pre-wrap rounded-sm bg-transparent p-2 text-sm leading-snug text-slate-700 outline-none ring-0 ${
+                      className={`min-h-0 flex-1 overflow-hidden whitespace-pre-wrap rounded-sm bg-transparent p-2 text-sm leading-snug text-slate-700 outline-none ring-0 ${
                         editingTextId === item.id ? "select-text" : "select-none"
                       }`}
                       contentEditable={editingTextId === item.id}
@@ -1518,10 +1531,10 @@ export default function Home() {
                       }}
                       onInput={(event) => {
                         autoFitCardHeight(item.id, event.currentTarget);
-                        registerLiveTextDraft(item.id, event.currentTarget.textContent ?? "");
+                        registerLiveTextDraft(item.id, readEditableText(event.currentTarget));
                       }}
                       onBlur={(event) => {
-                        updateCardText(item.id, event.currentTarget.textContent ?? "");
+                        updateCardText(item.id, readEditableText(event.currentTarget));
                         if (editingTextId === item.id) setEditingTextId(null);
                       }}
                     >
