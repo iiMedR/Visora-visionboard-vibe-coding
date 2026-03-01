@@ -246,6 +246,8 @@ export default function Home() {
     startPointerY: number;
     starts: Record<string, { x: number; y: number; width: number; height: number }>;
   } | null>(null);
+  const liveTextDraftsRef = useRef<Record<string, string>>({});
+  const liveTextSaveTimerRef = useRef<number | null>(null);
 
   const stats = useMemo(() => {
     const goals = board.items.filter((item) => item.kind === "goal").length;
@@ -355,10 +357,69 @@ export default function Home() {
     if (!isHydrated) return;
     const runId = ++saveRunRef.current;
     setSaveStatus("saving");
-    const ok = await persistSilent(boardRef.current, selectedYear);
+    const drafts = liveTextDraftsRef.current;
+    const draftIds = Object.keys(drafts);
+    const snapshot =
+      draftIds.length === 0
+        ? boardRef.current
+        : {
+            ...boardRef.current,
+            items: boardRef.current.items.map((item) => {
+              const nextText = drafts[item.id];
+              return typeof nextText === "string" ? { ...item, text: nextText } : item;
+            }),
+          };
+    const ok = await persistSilent(snapshot, selectedYear);
     if (runId !== saveRunRef.current) return;
     setSaveStatus(ok ? "saved" : "error");
   }, [isHydrated, persistSilent, selectedYear]);
+
+  const buildBoardWithLiveTextDrafts = useCallback((base: BoardData) => {
+    const drafts = liveTextDraftsRef.current;
+    const draftIds = Object.keys(drafts);
+    if (draftIds.length === 0) return base;
+    let changed = false;
+    const items = base.items.map((item) => {
+      const nextText = drafts[item.id];
+      if (typeof nextText !== "string" || nextText === item.text) return item;
+      changed = true;
+      return { ...item, text: nextText };
+    });
+    return changed ? { ...base, items } : base;
+  }, []);
+
+  const flushLiveTextDrafts = useCallback(async () => {
+    if (!isHydrated) return;
+    await forceSaveNow();
+  }, [forceSaveNow, isHydrated]);
+
+  useEffect(() => {
+    const flushOnHidden = () => {
+      if (document.visibilityState === "hidden") {
+        void flushLiveTextDrafts();
+      }
+    };
+
+    const flushOnPageHide = () => {
+      void flushLiveTextDrafts();
+    };
+
+    document.addEventListener("visibilitychange", flushOnHidden);
+    window.addEventListener("pagehide", flushOnPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", flushOnHidden);
+      window.removeEventListener("pagehide", flushOnPageHide);
+    };
+  }, [flushLiveTextDrafts]);
+
+  useEffect(() => {
+    return () => {
+      if (liveTextSaveTimerRef.current) {
+        window.clearTimeout(liveTextSaveTimerRef.current);
+        liveTextSaveTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const addCard = (kind: BoardItemKind) => {
     if (kind === "northstar" && board.items.some((item) => item.kind === "northstar")) return;
@@ -588,10 +649,27 @@ export default function Home() {
       });
   };
 
+  const registerLiveTextDraft = (id: string, text: string) => {
+    liveTextDraftsRef.current[id] = text;
+    if (liveTextSaveTimerRef.current) window.clearTimeout(liveTextSaveTimerRef.current);
+    liveTextSaveTimerRef.current = window.setTimeout(() => {
+      liveTextSaveTimerRef.current = null;
+      const withDrafts = buildBoardWithLiveTextDrafts(boardRef.current);
+      if (withDrafts === boardRef.current) return;
+      const runId = ++saveRunRef.current;
+      setSaveStatus("saving");
+      void persistSilent(withDrafts, selectedYear).then((ok) => {
+        if (runId !== saveRunRef.current) return;
+        setSaveStatus(ok ? "saved" : "error");
+      });
+    }, 320);
+  };
+
   const updateCardText = (id: string, text: string) => {
+    delete liveTextDraftsRef.current[id];
     const next = {
-      ...board,
-      items: board.items.map((item) => (item.id === id ? { ...item, text } : item)),
+      ...boardRef.current,
+      items: boardRef.current.items.map((item) => (item.id === id ? { ...item, text } : item)),
     };
     saveBoard(next);
   };
@@ -1407,6 +1485,9 @@ export default function Home() {
                       setEditingTextId(item.id);
                       setSelectedIds([item.id]);
                     }}
+                    onInput={(event) => {
+                      registerLiveTextDraft(item.id, event.currentTarget.textContent ?? "");
+                    }}
                     onBlur={(event) => {
                       updateCardText(item.id, event.currentTarget.textContent ?? "");
                       if (editingTextId === item.id) setEditingTextId(null);
@@ -1435,7 +1516,10 @@ export default function Home() {
                           event.stopPropagation();
                         }
                       }}
-                      onInput={(event) => autoFitCardHeight(item.id, event.currentTarget)}
+                      onInput={(event) => {
+                        autoFitCardHeight(item.id, event.currentTarget);
+                        registerLiveTextDraft(item.id, event.currentTarget.textContent ?? "");
+                      }}
                       onBlur={(event) => {
                         updateCardText(item.id, event.currentTarget.textContent ?? "");
                         if (editingTextId === item.id) setEditingTextId(null);
