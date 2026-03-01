@@ -52,7 +52,7 @@ const CANVAS_HEIGHT = 1800;
 let idCounter = 1;
 const STAMP_SET = ["💖", "👍", "⭐", "🔥", "👀", "✅", "🎯", "🚀", "💡", "🎉", "💰", "❓"];
 const TEXT_COLORS = ["#0f172a", "#2563eb", "#dc2626", "#16a34a", "#7c3aed"];
-const TEXT_SIZES = [20, 28, 36, 48];
+const TEXT_SIZES = [16, 24, 32, 40];
 const STARTER_GIF_SRC = "/starter-cat.gif";
 
 function storageKey(year: number) {
@@ -67,49 +67,50 @@ function defaultBoard(year: number): BoardData {
     isPublic: false,
     credits: 50,
     items: [
-      { id: "stamp-15", kind: "stamp", text: "\uD83D\uDC40", x: 1231, y: 320, width: 116, height: 116, tilt: 0 },
-      { id: "stamp-13", kind: "stamp", text: "\uD83C\uDFAF", x: 213, y: 151, width: 106, height: 106, tilt: 0 },
+      { id: "stamp-15", kind: "stamp", text: "\uD83D\uDC40", x: 1086, y: 292, width: 95, height: 95, tilt: 0 },
+      { id: "stamp-13", kind: "stamp", text: "\uD83C\uDFAF", x: 175, y: 124, width: 87, height: 87, tilt: 0 },
       {
         id: "text-5",
         kind: "text",
         text: "Hello World, I can\nbuild anything i want",
         textColor: "#7c3aed",
-        textSize: 48,
+        textSize: 40,
         textBold: true,
         textItalic: false,
-        x: 820,
-        y: 404,
-        width: 512,
-        height: 168,
+        x: 672,
+        y: 331,
+        width: 420,
+        height: 138,
         tilt: 0,
       },
-      { id: "goal-9", kind: "goal", text: "new goal", x: 268, y: 210, width: 520, height: 160, tilt: 1 },
-      { id: "focus-11", kind: "focus", text: "new focus", x: 811, y: 210, width: 516, height: 160, tilt: 2 },
-      { id: "win-12", kind: "win", text: "new win", x: 267, y: 393, width: 520, height: 160, tilt: -3 },
+      { id: "goal-9", kind: "goal", text: "new goal", x: 220, y: 172, width: 426, height: 131, tilt: 1 },
+      { id: "focus-11", kind: "focus", text: "new focus", x: 665, y: 172, width: 423, height: 131, tilt: 2 },
+      { id: "win-12", kind: "win", text: "new win", x: 219, y: 322, width: 426, height: 131, tilt: -3 },
       {
         id: "northstar-7",
         kind: "northstar",
         text: "your north star",
-        x: 659,
-        y: 20,
-        width: 280,
-        height: 170,
+        x: 540,
+        y: 16,
+        width: 230,
+        height: 139,
         tilt: -1,
       },
-      { id: "stamp-14", kind: "stamp", text: "", x: 940, y: 74, width: 122, height: 122, tilt: 0 },
-      { id: "stamp-17", kind: "stamp", text: "\uD83C\uDF89", x: 753.9999389648438, y: 513, width: 62, height: 62, tilt: 0 },
+      { id: "stamp-14", kind: "stamp", text: "", x: 771, y: 61, width: 100, height: 100, tilt: 0 },
+      { id: "stamp-17", kind: "stamp", text: "\uD83C\uDF89", x: 618, y: 421, width: 51, height: 51, tilt: 0 },
       {
         id: "image-18",
         kind: "image",
         text: "",
         imageSrc: STARTER_GIF_SRC,
         imageRatio: 1.0596026490066226,
-        x: 1096.5,
-        y: 28.000015258789062,
-        width: 162,
-        height: 153,
+        x: 899,
+        y: 23,
+        width: 133,
+        height: 125,
         tilt: 0,
       },
+      { id: "stamp-16", kind: "stamp", text: "\uD83D\uDE80", x: 191, y: 126, width: 56, height: 56, tilt: 0 },
     ],
   };
 }
@@ -127,11 +128,11 @@ function loadBoard(year: number): BoardData {
       items: Array.isArray(parsed.items)
         ? parsed.items.map((item) => ({
             ...item,
-            width: typeof item.width === "number" ? item.width : 220,
-            height: typeof item.height === "number" ? item.height : 220,
+            width: typeof item.width === "number" ? item.width : 180,
+            height: typeof item.height === "number" ? item.height : 180,
             imageRatio: typeof item.imageRatio === "number" ? item.imageRatio : undefined,
             textColor: typeof item.textColor === "string" ? item.textColor : "#0f172a",
-            textSize: typeof item.textSize === "number" ? item.textSize : 32,
+            textSize: typeof item.textSize === "number" ? item.textSize : 26,
             textBold: Boolean(item.textBold),
             textItalic: Boolean(item.textItalic),
           }))
@@ -149,11 +150,11 @@ function normalizeBoard(data: BoardData, year: number): BoardData {
     items: Array.isArray(data.items)
       ? data.items.map((item) => ({
           ...item,
-          width: typeof item.width === "number" ? item.width : 220,
-          height: typeof item.height === "number" ? item.height : 220,
+          width: typeof item.width === "number" ? item.width : 180,
+          height: typeof item.height === "number" ? item.height : 180,
           imageRatio: typeof item.imageRatio === "number" ? item.imageRatio : undefined,
           textColor: typeof item.textColor === "string" ? item.textColor : "#0f172a",
-          textSize: typeof item.textSize === "number" ? item.textSize : 32,
+          textSize: typeof item.textSize === "number" ? item.textSize : 26,
           textBold: Boolean(item.textBold),
           textItalic: Boolean(item.textItalic),
         }))
@@ -213,6 +214,7 @@ export default function Home() {
   const [isDragOverBoard, setIsDragOverBoard] = useState(false);
   const [isStampPickerOpen, setIsStampPickerOpen] = useState(false);
   const [failedImageIds, setFailedImageIds] = useState<string[]>([]);
+  const [overflowingNoteIds, setOverflowingNoteIds] = useState<string[]>([]);
   const [marquee, setMarquee] = useState<{
     startX: number;
     startY: number;
@@ -252,6 +254,7 @@ export default function Home() {
   } | null>(null);
   const liveTextDraftsRef = useRef<Record<string, string>>({});
   const liveTextSaveTimerRef = useRef<number | null>(null);
+  const noteBodyRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const stats = useMemo(() => {
     const goals = board.items.filter((item) => item.kind === "goal").length;
@@ -344,6 +347,31 @@ export default function Home() {
     selectedIdsRef.current = selectedIds;
   }, [selectedIds]);
 
+  useEffect(() => {
+    const computeOverflowingNotes = () => {
+      const nextIds = board.items
+        .filter((item) => item.kind !== "image" && item.kind !== "stamp" && item.kind !== "text")
+        .filter((item) => {
+          const node = noteBodyRefs.current[item.id];
+          if (!node) return false;
+          const bodyClipped = node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1;
+          const ownerAndSpacingHeight = 34; // owner line + spacing near the bottom of note cards
+          const requiredNoteHeight = node.scrollHeight + ownerAndSpacingHeight;
+          const cardTooShort = requiredNoteHeight > item.height - 12;
+          return bodyClipped || cardTooShort;
+        })
+        .map((item) => item.id);
+      setOverflowingNoteIds(nextIds);
+    };
+
+    const frame = window.requestAnimationFrame(computeOverflowingNotes);
+    window.addEventListener("resize", computeOverflowingNotes);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", computeOverflowingNotes);
+    };
+  }, [board.items, editingTextId]);
+
   const cloneBoard = (value: BoardData): BoardData => JSON.parse(JSON.stringify(value)) as BoardData;
 
   const saveBoard = (next: BoardData, _year = selectedYear, trackHistory = true) => {
@@ -429,8 +457,8 @@ export default function Home() {
     if (kind === "northstar" && board.items.some((item) => item.kind === "northstar")) return;
     const index = board.items.length;
     const isNorthStar = kind === "northstar";
-    const northStarWidth = 280;
-    const northStarHeight = 170;
+    const northStarWidth = 230;
+    const northStarHeight = 139;
     const areaWidth = boardAreaRef.current?.clientWidth ?? CANVAS_WIDTH;
     const next: BoardData = {
       ...board,
@@ -449,10 +477,10 @@ export default function Home() {
                   : "new focus",
           x: isNorthStar
             ? Math.max(8, Math.round((areaWidth - northStarWidth) / 2))
-            : 70 + ((index * 36) % 620),
-          y: isNorthStar ? 24 : 80 + ((index * 44) % 380),
-          width: isNorthStar ? northStarWidth : 220,
-          height: isNorthStar ? northStarHeight : 220,
+            : 58 + ((index * 30) % 620),
+          y: isNorthStar ? 20 : 66 + ((index * 36) % 380),
+          width: isNorthStar ? northStarWidth : 180,
+          height: isNorthStar ? northStarHeight : 180,
           tilt: (index % 6) - 3,
         },
       ],
@@ -467,13 +495,13 @@ export default function Home() {
       kind: "text",
       text: "new text",
       textColor: "#0f172a",
-      textSize: 32,
+      textSize: 26,
       textBold: false,
       textItalic: false,
-      x: Math.max(0, Math.min(x, CANVAS_WIDTH - 260)),
-      y: Math.max(0, Math.min(y, CANVAS_HEIGHT - 80)),
-      width: 260,
-      height: 80,
+      x: Math.max(0, Math.min(x, CANVAS_WIDTH - 213)),
+      y: Math.max(0, Math.min(y, CANVAS_HEIGHT - 66)),
+      width: 213,
+      height: 66,
       tilt: 0,
     };
     const next = { ...boardRef.current, items: [...boardRef.current.items, nextItem] };
@@ -485,7 +513,7 @@ export default function Home() {
 
   const addStamp = (value: string) => {
     const index = boardRef.current.items.length;
-    const size = 88;
+    const size = 72;
     const nextItem: BoardItem = {
       id: nextId("stamp"),
       kind: "stamp",
@@ -503,7 +531,7 @@ export default function Home() {
   };
 
   const addStampAt = (value: string, x: number, y: number) => {
-    const size = 88;
+    const size = 72;
     const nextItem: BoardItem = {
       id: nextId("stamp"),
       kind: "stamp",
@@ -520,13 +548,13 @@ export default function Home() {
   };
 
   const addImageCard = (src: string, naturalWidth: number, naturalHeight: number, x: number, y: number) => {
-    const maxWidth = 360;
-    const maxHeight = 300;
+    const maxWidth = 295;
+    const maxHeight = 246;
     const baseWidth = Math.max(1, naturalWidth);
     const baseHeight = Math.max(1, naturalHeight);
     const scale = Math.min(maxWidth / baseWidth, maxHeight / baseHeight, 1);
-    const width = Math.max(140, Math.round(baseWidth * scale));
-    const height = Math.max(100, Math.round(baseHeight * scale));
+    const width = Math.max(115, Math.round(baseWidth * scale));
+    const height = Math.max(82, Math.round(baseHeight * scale));
 
     const nextItem: BoardItem = {
       id: nextId("image"),
@@ -694,7 +722,7 @@ export default function Home() {
     if (overflow <= 2) return;
     const currentItem = boardRef.current.items.find((item) => item.id === id);
     if (!currentItem) return;
-    const neededHeight = Math.min(520, Math.max(160, currentItem.height + overflow + 8));
+    const neededHeight = Math.min(520, Math.max(131, currentItem.height + overflow + 8));
     setBoard((prev) => ({
       ...prev,
       items: prev.items.map((item) =>
@@ -859,10 +887,27 @@ export default function Home() {
                           height: Math.min(420, Math.max(minHeight, active.startH + dy)),
                         };
                       })()
-                  : {
-                      width: Math.min(520, Math.max(160, active.startW + dx)),
-                      height: Math.min(520, Math.max(160, active.startH + dy)),
-                    }),
+                  : item.kind === "stamp"
+                    ? (() => {
+                        const minSize = 16;
+                        const maxSize = 520;
+                        const nextSize = Math.min(
+                          maxSize,
+                          Math.max(minSize, Math.max(active.startW + dx, active.startH + dy)),
+                        );
+                        return {
+                          width: nextSize,
+                          height: nextSize,
+                        };
+                      })()
+                  : (() => {
+                      const minWidth = 80;
+                      const minHeight = 78;
+                      return {
+                        width: Math.min(520, Math.max(minWidth, active.startW + dx)),
+                        height: Math.min(520, Math.max(minHeight, active.startH + dy)),
+                      };
+                    })()),
               }
             : item,
         ),
@@ -1425,6 +1470,8 @@ export default function Home() {
                   item.kind === "image" || item.kind === "stamp" || item.kind === "text" ? "" : "border shadow-sm"
                 } ${noteStyle(item.kind)} ${
                   item.kind !== "image" && selectedIds.includes(item.id) ? "ring-2 ring-slate-500/50" : ""
+                } ${
+                  overflowingNoteIds.includes(item.id) ? "border-2 border-red-500" : ""
                 } select-none`}
                 style={{ left: item.x, top: item.y, width: item.width, height: item.height, zIndex: idx + 1 }}
               >
@@ -1464,7 +1511,7 @@ export default function Home() {
                 ) : item.kind === "stamp" ? (
                   <div
                     className="pointer-events-none grid h-full w-full place-items-center bg-transparent text-4xl leading-none"
-                    style={{ fontSize: `${Math.max(32, Math.round(Math.min(item.width, item.height) * 0.52))}px` }}
+                    style={{ fontSize: `${Math.max(8, Math.round(Math.min(item.width, item.height) * 0.52))}px` }}
                   >
                     {item.text || "⭐"}
                   </div>
@@ -1511,6 +1558,10 @@ export default function Home() {
                 ) : (
                   <>
                     <div
+                      ref={(node) => {
+                        noteBodyRefs.current[item.id] = node;
+                      }}
+                      data-note-body-id={item.id}
                       className={`min-h-0 flex-1 overflow-hidden whitespace-pre-wrap rounded-sm bg-transparent p-2 text-sm leading-snug text-slate-700 outline-none ring-0 ${
                         editingTextId === item.id ? "select-text" : "select-none"
                       }`}
