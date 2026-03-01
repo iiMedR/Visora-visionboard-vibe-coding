@@ -2,6 +2,10 @@
 
 build your first app with ai. no coding experience needed. seriously.
 
+## live app
+
+visora is live here: https://visora-deploy-gd5lmqzqyb.vercel.app
+
 ## what is this?
 
 this is the starter repo for **make something** — a free, live tutorial where i show you how to build a real app using openai codex (an ai that writes code for you). you watch me build one from scratch, then you go build your own.
