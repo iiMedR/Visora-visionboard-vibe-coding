@@ -876,6 +876,8 @@ export default function Home() {
 
     const handleKeyDown = (event: KeyboardEvent) => {
       const mod = event.ctrlKey || event.metaKey;
+      if (isEditingTarget(event.target)) return;
+
       if (mod && event.key.toLowerCase() === "z") {
         event.preventDefault();
         if (event.shiftKey) {
@@ -923,8 +925,6 @@ export default function Home() {
         setBoard(next);
         return;
       }
-
-      if (isEditingTarget(event.target)) return;
 
       if (mod && event.key.toLowerCase() === "a") {
         event.preventDefault();
@@ -1191,10 +1191,8 @@ export default function Home() {
             setIsDragOverBoard(true);
           }}
           onDragOver={handleBoardDragOver}
-          onDragOverCapture={handleBoardDragOver}
           onDragLeaveCapture={() => setIsDragOverBoard(false)}
           onDrop={handleBoardDrop}
-          onDropCapture={handleBoardDrop}
           className={`relative mt-4 h-[calc(100vh-175px)] w-full overflow-hidden rounded-2xl border bg-white/25 backdrop-blur-[2px] ${
             isDragOverBoard ? "border-sky-400/80 shadow-[0_0_0_2px_rgba(56,189,248,0.25)]" : "border-slate-200/70"
           } ${activeTool === "text" ? "cursor-text" : ""}`}
@@ -1279,7 +1277,8 @@ export default function Home() {
                     );
                     return;
                   }
-                  setSelectedIds((prev) => (prev.includes(item.id) ? prev : [item.id]));
+                  // If multi-select isn't pressed, dragging should target only the clicked item.
+                  setSelectedIds([item.id]);
                   startPointerDrag(item.id, event);
                 }}
                 className={`absolute flex cursor-grab flex-col rounded-sm active:cursor-grabbing ${
