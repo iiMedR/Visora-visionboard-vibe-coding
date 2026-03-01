@@ -53,27 +53,62 @@ let idCounter = 1;
 const STAMP_SET = ["💖", "👍", "⭐", "🔥", "👀", "✅", "🎯", "🚀", "💡", "🎉", "💰", "❓"];
 const TEXT_COLORS = ["#0f172a", "#2563eb", "#dc2626", "#16a34a", "#7c3aed"];
 const TEXT_SIZES = [20, 28, 36, 48];
+const STARTER_GIF_SRC = "/starter-cat.gif";
 
 function storageKey(year: number) {
   return `vision-board-${year}`;
 }
 
 function defaultBoard(year: number): BoardData {
+  void year;
   return {
-    title: `${year} annual vision board`,
+    title: "2026 visionBoard",
     ownerName: "Mohamed Reda",
     isPublic: false,
     credits: 50,
     items: [
+      { id: "stamp-15", kind: "stamp", text: "\uD83D\uDC40", x: 1231, y: 320, width: 116, height: 116, tilt: 0 },
+      { id: "stamp-13", kind: "stamp", text: "\uD83C\uDFAF", x: 213, y: 151, width: 106, height: 106, tilt: 0 },
       {
-        id: `${year}-focus`,
-        kind: "focus",
-        text: "main focus: build, ship, and grow",
-        x: 90,
-        y: 110,
-        width: 220,
-        height: 220,
-        tilt: -2,
+        id: "text-5",
+        kind: "text",
+        text: "Hello World, I can\nbuild anything i want",
+        textColor: "#7c3aed",
+        textSize: 48,
+        textBold: true,
+        textItalic: false,
+        x: 820,
+        y: 404,
+        width: 512,
+        height: 168,
+        tilt: 0,
+      },
+      { id: "goal-9", kind: "goal", text: "new goal", x: 268, y: 210, width: 520, height: 160, tilt: 1 },
+      { id: "focus-11", kind: "focus", text: "new focus", x: 811, y: 210, width: 516, height: 160, tilt: 2 },
+      { id: "win-12", kind: "win", text: "new win", x: 267, y: 393, width: 520, height: 160, tilt: -3 },
+      {
+        id: "northstar-7",
+        kind: "northstar",
+        text: "your north star",
+        x: 659,
+        y: 20,
+        width: 280,
+        height: 170,
+        tilt: -1,
+      },
+      { id: "stamp-14", kind: "stamp", text: "", x: 940, y: 74, width: 122, height: 122, tilt: 0 },
+      { id: "stamp-17", kind: "stamp", text: "\uD83C\uDF89", x: 753.9999389648438, y: 513, width: 62, height: 62, tilt: 0 },
+      {
+        id: "image-18",
+        kind: "image",
+        text: "",
+        imageSrc: STARTER_GIF_SRC,
+        imageRatio: 1.0596026490066226,
+        x: 1096.5,
+        y: 28.000015258789062,
+        width: 162,
+        height: 153,
+        tilt: 0,
       },
     ],
   };
@@ -139,6 +174,16 @@ function nextId(prefix: string) {
   return `${prefix}-${idCounter}`;
 }
 
+function syncIdCounter(items: BoardItem[]) {
+  const maxSeen = items.reduce((max, item) => {
+    const match = item.id.match(/-(\d+)$/);
+    if (!match) return max;
+    const n = Number(match[1]);
+    return Number.isFinite(n) ? Math.max(max, n) : max;
+  }, 1);
+  if (maxSeen > idCounter) idCounter = maxSeen;
+}
+
 function kindLabel(kind: BoardItemKind) {
   if (kind === "goal") return "goal";
   if (kind === "win") return "win";
@@ -163,6 +208,7 @@ export default function Home() {
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [isDragOverBoard, setIsDragOverBoard] = useState(false);
   const [isStampPickerOpen, setIsStampPickerOpen] = useState(false);
+  const [failedImageIds, setFailedImageIds] = useState<string[]>([]);
   const [marquee, setMarquee] = useState<{
     startX: number;
     startY: number;
@@ -215,6 +261,7 @@ export default function Home() {
 
   useEffect(() => {
     boardRef.current = board;
+    syncIdCounter(board.items);
   }, [board]);
 
   const persistSilent = useCallback(async (next: BoardData, year = selectedYear) => {
@@ -1304,7 +1351,7 @@ export default function Home() {
                     {kindLabel(item.kind)}
                   </Chip>
                 )}
-                {item.kind === "image" && item.imageSrc ? (
+                {item.kind === "image" && item.imageSrc && !failedImageIds.includes(item.id) ? (
                   <div className="relative flex-1 overflow-hidden rounded-sm bg-transparent">
                     <Image
                       src={item.imageSrc}
@@ -1312,9 +1359,16 @@ export default function Home() {
                       fill
                       unoptimized
                       sizes="360px"
+                      onError={() =>
+                        setFailedImageIds((prev) => (prev.includes(item.id) ? prev : [...prev, item.id]))
+                      }
                       draggable={false}
                       className="pointer-events-none object-fill select-none"
                     />
+                  </div>
+                ) : item.kind === "image" ? (
+                  <div className="grid h-full w-full place-items-center rounded-sm bg-slate-200 text-xs text-slate-500">
+                    image missing
                   </div>
                 ) : item.kind === "stamp" ? (
                   <div
